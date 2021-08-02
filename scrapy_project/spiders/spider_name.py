@@ -1,6 +1,9 @@
+import time
+
 import scrapy
 import json
 from scrapy.crawler import CrawlerProcess
+import datetime
 
 
 class SpiderNameSpider(scrapy.Spider):
@@ -11,6 +14,7 @@ class SpiderNameSpider(scrapy.Spider):
     pages_count = int(
         input("\033[31m\033[43mPlease, enter the number of pages you want to parse (integer, >0) --> \033[0m"))
     resume_counter = 0
+    result_file_name = f"../../data_at_{datetime.datetime.now()}.json"
 
     # redefine the start function also known as crawler's entry point
     def start_requests(self):
@@ -18,7 +22,6 @@ class SpiderNameSpider(scrapy.Spider):
         for page in range(1, self.pages_count + 1):
             url = f'https://www.work.ua/resumes-kharkiv/?page={page}'
             yield scrapy.Request(url, headers=self.headers, callback=self.parse_pages)
-            break
 
     def parse_pages(self, response):
         """here we must collect:
@@ -49,7 +52,7 @@ class SpiderNameSpider(scrapy.Spider):
             position = card.css('h2 > a::text').get()
 
             # url
-            url_for_inner_information = f'{SpiderNameSpider.allowed_domains[0]}{card.css("h2 > a::attr(href)").get()}'
+            url_for_inner_information = card.css("h2 > a::attr(href)").get()
 
             # we aim to control the numbers of the resumes we have parsed
             SpiderNameSpider.resume_counter += 1
@@ -64,18 +67,10 @@ class SpiderNameSpider(scrapy.Spider):
             }
 
             # just for checking our data
-            print(json.dumps(output, indent=4, sort_keys=False, ensure_ascii=False))
+            # print(json.dumps(output, indent=4, sort_keys=False, ensure_ascii=False))
             # yield output
 
-            yield scrapy.Request(url_for_inner_information,
-                                 self.parse_card_details,
-                                meta={
-                                    'sequence number': numbers_of_the_resume,
-                                    'name': name,
-                                    'age': age,
-                                    'position': position,
-                                    'link': url_for_inner_information,})
-
+            yield response.follow(url_for_inner_information, self.parse_card_details, meta={'output': output})
 
     def parse_card_details(self, response):
         '''
@@ -84,9 +79,18 @@ class SpiderNameSpider(scrapy.Spider):
         :return:
         output : dictionary
         '''
-        final = response.meta['name']
 
-        print('final')
+        # inner information
+        description = ' '.join(response.css('div.card > p::text').getall())
+        clean_description = ' '.join(description.split())
+
+        output = response.meta["output"]
+        output['detail_info'] = clean_description
+
+        with open(SpiderNameSpider.result_file_name, 'a', encoding='utf-8') as f:
+            json.dump(output, f, ensure_ascii=False, indent=4)
+
+        time.sleep(0.5)  # just to avoid ban from the site
 
 
 # main driver
